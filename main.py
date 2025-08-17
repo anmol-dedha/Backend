@@ -1,33 +1,50 @@
-from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi import FastAPI, WebSocket
+import whisper
+import requests
+from gtts import gTTS
+from io import BytesIO
+import base64
 import os
 from dotenv import load_dotenv
-from utils import transcribe_audio, call_openrouter, generate_tts
 
-load_dotenv("secrets.env")  # Load API keys
-
+load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+MODEL = "deepseek/deepseek-r1-0528:free"
 
-app = FastAPI(title="AnnaData Voice Assistant API")
+app = FastAPI()
+model = whisper.load_model("tiny")
 
-@app.post("/voice-assistant/")
-async def voice_assistant(audio_file: UploadFile = File(...)):
-    # 1️⃣ Save uploaded audio
-    file_path = f"temp_{audio_file.filename}"
-    with open(file_path, "wb") as f:
-        f.write(await audio_file.read())
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    await ws.accept()
+    while True:
+        data = await ws.receive_text()  # receive base64 audio chunk
+        audio_bytes = base64.b64decode(data)
+        with open("temp.wav", "wb") as f:
+            f.write(audio_bytes)
 
-    # 2️⃣ Transcribe
-    user_text = transcribe_audio(file_path)
+        # Transcribe
+        result = model.transcribe("temp.wav", language="hi")
+        user_text = result["text"]
 
-    # 3️⃣ Call OpenRouter
-    assistant_text = call_openrouter(user_text, OPENROUTER_API_KEY)
+        # Call OpenRouter
+        messages = [{"role": "user", "content": user_text}]
+        resp = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={"model": MODEL, "messages": messages},
+        )
+        assistant_text = resp.json()["choices"][0]["message"]["content"]
 
-    # 4️⃣ Generate TTS
-    audio_bytes = generate_tts(assistant_text)
+        # Convert to speech
+        tts = gTTS(assistant_text, lang="hi")
+        audio_out = BytesIO()
+        tts.write_to_fp(audio_out)
+        audio_out.seek(0)
+        audio_b64 = base64.b64encode(audio_out.read()).decode("utf-8")
 
-    # 5️⃣ Return JSON with transcription + assistant + audio
-    return StreamingResponse(audio_bytes, media_type="audio/mp3", headers={
-        "X-User-Text": user_text,
-        "X-Assistant-Text": assistant_text
-    })
+        # Send assistant response
+        await ws.send_json({"text": assistant_text, "audio": audio_b64})
