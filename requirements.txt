@@ -1,10 +1,10 @@
 fastapi
 uvicorn
+pydantic
 whisper
-torch
-gtts
+gTTS
 requests
-python-multipart
 numpy
 soundfile
+torch
 python-dotenv
