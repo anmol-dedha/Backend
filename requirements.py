@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+whisper
+torch
+gtts
+requests
+python-multipart
+numpy
+soundfile
+python-dotenv
