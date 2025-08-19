@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import requests, os
+import requests, os, re  # added re for cleaning markdown
 
 # RAG imports
 from langchain_community.vectorstores import FAISS
@@ -69,6 +69,9 @@ def chat():
         data_json = response.json()
         bot_reply = data_json["choices"][0]["message"].get("content", "").strip()
 
+        # ✅ Clean unwanted markdown like **bold**
+        bot_reply = re.sub(r"\*\*(.*?)\*\*", r"\1", bot_reply)
+
         if not bot_reply:
             bot_reply = (
                 "माफ़ कीजिए, मैं इस सवाल का सही जवाब नहीं दे पा रहा हूँ। "
@@ -106,7 +109,13 @@ def weather():
         temp = weather_data["main"]["temp"]
         desc = weather_data["weather"][0]["description"]
 
-        return jsonify({"weather": f"{location} का मौसम: {temp}°C, {desc}"})
+        # ✅ Return structured JSON for frontend widgets
+        return jsonify({
+            "type": "weather",
+            "location": location,
+            "temp": temp,
+            "desc": desc
+        })
 
     except Exception as e:
         return jsonify({"weather": f"⚠️ Server error: {str(e)}"}), 500
