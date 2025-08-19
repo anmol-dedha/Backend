@@ -22,7 +22,18 @@ def chat():
             },
             json={
                 "model": MODEL,
-                "messages": [{"role": "user", "content": user_message}],
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a helpful assistant. "
+                            "Always reply in the SAME language as the user's message. "
+                            "If the user writes in Hindi, reply in Hindi. "
+                            "If the user writes in English, reply in English."
+                        )
+                    },
+                    {"role": "user", "content": user_message}
+                ],
             },
         )
 
