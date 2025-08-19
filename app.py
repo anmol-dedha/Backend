@@ -2,16 +2,33 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests, os
 
+# RAG imports
+from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
+
 app = Flask(__name__)
 CORS(app)
 
+# ======================
+# 🔑 API Keys & Models
+# ======================
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 MODEL = "deepseek/deepseek-r1-0528:free"
 
+# ✅ Load FAISS database for schemes
+try:
+    db = FAISS.load_local("vector_db", OpenAIEmbeddings(), allow_dangerous_deserialization=True)
+except Exception as e:
+    print("⚠️ Could not load FAISS DB:", e)
+    db = None
+
+# ======================
+# 🤖 Chatbot Route
+# ======================
 @app.route("/chat", methods=["POST"])
 def chat():
     try:
-        # ✅ Check if API key is set
         if not OPENROUTER_API_KEY:
             return jsonify({"reply": "⚠️ Server misconfigured: API key missing"}), 500
 
@@ -38,7 +55,7 @@ def chat():
                             "If the user writes in Hindi, reply in Hindi. "
                             "If the user writes in English, reply in English. "
                             "If the user mixes languages (Hinglish), reply in the same style. "
-                            "Keep answers concise, friendly, and supportive, so farmers can take direct action from your guidance."
+                            "Keep answers concise, friendly, and supportive."
                         ),
                     },
                     {"role": "user", "content": user_message},
@@ -52,7 +69,6 @@ def chat():
         data_json = response.json()
         bot_reply = data_json["choices"][0]["message"].get("content", "").strip()
 
-        # ✅ Fallback if model doesn't reply
         if not bot_reply:
             bot_reply = (
                 "माफ़ कीजिए, मैं इस सवाल का सही जवाब नहीं दे पा रहा हूँ। "
@@ -65,5 +81,63 @@ def chat():
         return jsonify({"reply": f"⚠️ Server error: {str(e)}"}), 500
 
 
+# ======================
+# 🌦️ Weather Route
+# ======================
+@app.route("/weather", methods=["POST"])
+def weather():
+    try:
+        data = request.get_json()
+        location = data.get("location", "")
+
+        if not location:
+            return jsonify({"weather": "⚠️ Please provide city or pincode"}), 400
+
+        if not WEATHER_API_KEY:
+            return jsonify({"weather": "⚠️ Weather API key missing"}), 500
+
+        url = f"http://api.openweathermap.org/data/2.5/weather?q={location}&appid={WEATHER_API_KEY}&units=metric"
+        res = requests.get(url)
+
+        if res.status_code != 200:
+            return jsonify({"weather": "⚠️ Error fetching weather"}), 500
+
+        weather_data = res.json()
+        temp = weather_data["main"]["temp"]
+        desc = weather_data["weather"][0]["description"]
+
+        return jsonify({"weather": f"{location} का मौसम: {temp}°C, {desc}"})
+
+    except Exception as e:
+        return jsonify({"weather": f"⚠️ Server error: {str(e)}"}), 500
+
+
+# ======================
+# 📜 Government Schemes (RAG)
+# ======================
+@app.route("/schemes", methods=["POST"])
+def schemes():
+    try:
+        if db is None:
+            return jsonify({"schemes": "⚠️ Scheme database not loaded"}), 500
+
+        data = request.get_json()
+        query = data.get("query", "")
+
+        if not query:
+            return jsonify({"schemes": "⚠️ Please provide a query"}), 400
+
+        docs = db.similarity_search(query, k=2)
+        context = "\n".join([d.page_content for d in docs])
+
+        return jsonify({"schemes": context if context else "⚠️ No relevant schemes found"})
+
+    except Exception as e:
+        return jsonify({"schemes": f"⚠️ Server error: {str(e)}"}), 500
+
+
+# ======================
+# 🚀 Run Server
+# ======================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
