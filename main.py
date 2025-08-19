@@ -1,14 +1,11 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import requests, json
-import os
+import requests, os
 
 app = Flask(__name__)
-CORS(app)  # allow frontend to call this backend
+CORS(app)
 
-# ✅ Load API key from environment variable
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
 MODEL = "deepseek/deepseek-r1-0528:free"
 
 @app.route("/chat", methods=["POST"])
@@ -17,18 +14,15 @@ def chat():
         data = request.get_json()
         user_message = data.get("message", "")
 
-        # Send request to OpenRouter API
         response = requests.post(
-            url="https://openrouter.ai/api/v1/chat/completions",
+            "https://openrouter.ai/api/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                 "Content-Type": "application/json",
             },
             json={
                 "model": MODEL,
-                "messages": [
-                    {"role": "user", "content": user_message}
-                ],
+                "messages": [{"role": "user", "content": user_message}],
             },
         )
 
@@ -42,7 +36,6 @@ def chat():
 
     except Exception as e:
         return jsonify({"reply": f"⚠️ Server error: {str(e)}"}), 500
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
